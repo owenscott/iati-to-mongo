@@ -1,0 +1,6 @@
+{
+    "activity": [
+        {"sourceNode":["iati-identifier",0,"text"], "destNode":["iatiIdentifier"]}
+		]
+}
+
