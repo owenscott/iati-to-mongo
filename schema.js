@@ -5,7 +5,13 @@ makeSchema = function(mongoose) {
     return {
         //transaction
         activity: new mongoose.Schema({
-            iatiIdentifier: String
+            iatiIdentifier: String,
+            transaction: Array,
+						plannedDisbursement: Array,
+						participatingOrg: Array,
+						result: Array,
+						budget: Array,
+						location: Array
         })
     };
 };

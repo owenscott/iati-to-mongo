@@ -60,23 +60,20 @@ var memLogger = new (winston.Logger)({
 
 require('./schema.js');
 
-
-
-
+var queue = [];
+var running = 0;
+var datasetCounter = 0;
+var numDataSets;
 
 
 //Mongoose Models
 
 var schema = makeSchema(mongoose);
-var Activity = mongoose.model('Activity',schema.activity)
+//var Activity = mongoose.model('Activity',schema.activity)
 
 //CODE
 
-//mongoose models (try putting these in the function scope)
-//var Transaction = mongoose.model('Transaction', transactionSchema);
-//var Budget = mongoose.model('Budget', budgetSchema);
-//var Location = mongoose.model('Location', locationSchema);
-//var Condition = mongoose.model('Condition', conditionSchema);
+
 
 //connect to Mongo
 mongoose.connect('mongodb://localhost/'+dbName);
@@ -112,63 +109,15 @@ db.once('open',function() {
         },
         //=====download xml for each activity, parse, put in DB=====
         function(callback) {
-            var numDataSets = datasetList.length;
-            var datasetCounter = 0;
+            numDataSets = datasetList.length;
+            
+            //---------parse datasets to db----------
             async.forEach(datasetList, 
-                function(dataset,callback) {
-                    var metadata;
-                    var activityData;
-                    //======
-                    async.series([
-                        
-                        //---download activity metadata from API---
-                        function(callback) {
-                            Request('http://www.iatiregistry.org/api/rest/dataset/' + dataset, function(err,res,body) {
-                                if (err) return callback({message:'Error downloading metadata.', json:{dataset:dataset,error:err}});
-                                //parse metadata
-                                metadata = JSON.parse(body);
-                                //check if has download url for XML
-                                if (!metadata.download_url) return callback({message:'Metadata has no download url.', json:{dataset:dataset,error:'No_Download_Url'}});
-                                //move to next function in async.series
-                                return callback();
-                            })
-                        },
-                        
-                        //---download activity XML---
-                        function(callback) {
-                            Request(metadata.download_url, function(err,res,body) {
-                                if (err) return callback({message:'Error downloading XML.', json:{dataset:dataset,error:err}});
-                                activityData = body;
-                                return callback();
-                            })
-                        },
-                        //---parse activity XML to JSON---
-                        function(callback) {
-                            parseString(activityData, function(err, data) {
-                                if (err) return callback({message:'Error parsing XML.', json:{dataset:dataset,error:err}});
-                                activityData = data;
-                                return callback()
-                            });
-                        },
-                        //---put activity JSON into DB---
-                        function(callback) {
-                            //check if empty
-                            if(!activityData['iati-activities'] || !activityData['iati-activities']['iati-activity']) {
-                                return callback({message:'No activities found.', json:{dataset:dataset,error:'NoActivities'}});
-                            }
-                            //write json to db
-                            writeActivitiesToDb(dataset, metadata, activityData, mapping, callback);
-                        }],
-                        //---callback after processing a dataset to increment the counter and call the async.ForEach callback
-                        function(err) {
-                            datasetCounter++;
-                            logger.info('Finished dataset %s of %s', datasetCounter, numDataSets, {dataset:dataset});
-                            memLogger.info(util.inspect(process.memoryUsage().rss));
-                            if (err) logger.warn(err.message,err.json);
-                            return callback();   
-                        }
-                    );
-                },
+                function (dataset, callback) {
+                    queue.push({dataset:dataset, callback:callback, mapping:mapping});
+                    return checkRunning();
+                }
+                ,
                 //===final callback after processing all datasets===
                 function(err) {
                     if (err) return callback({message:'Processing datasets aborted.',json:{error:err}});
@@ -190,6 +139,66 @@ db.once('open',function() {
     
 
 
+function processDataset(dataset,mapping,callback) {
+    
+    running++;
+    var metadata;
+    var activityData;
+    //======
+    async.series([
+        
+        //---download activity metadata from API---
+        function(callback) {
+            Request('http://www.iatiregistry.org/api/rest/dataset/' + dataset, function(err,res,body) {
+                if (err) return callback({message:'Error downloading metadata.', json:{dataset:dataset,error:err}});
+                //parse metadata
+                metadata = JSON.parse(body);
+                //check if has download url for XML
+                if (!metadata.download_url) return callback({message:'Metadata has no download url.', json:{dataset:dataset,error:'No_Download_Url'}});
+                //move to next function in async.series
+                return callback();
+            })
+        },
+        
+        //---download activity XML---
+        function(callback) {
+            Request(metadata.download_url, function(err,res,body) {
+                if (err) return callback({message:'Error downloading XML.', json:{dataset:dataset,error:err}});
+                activityData = body;
+                return callback();
+            })
+        },
+        //---parse activity XML to JSON---
+        function(callback) {
+            parseString(activityData, function(err, data) {
+                if (err) return callback({message:'Error parsing XML.', json:{dataset:dataset,error:err}});
+                activityData = data;
+                return callback()
+            });
+        },
+        //---put activity JSON into DB---
+        function(callback) {
+            //check if empty
+            if(!activityData['iati-activities'] || !activityData['iati-activities']['iati-activity']) {
+                return callback({message:'No activities found.', json:{dataset:dataset,error:'NoActivities'}});
+            }
+            //write json to db
+            writeActivitiesToDb(dataset, metadata, activityData, mapping, callback);
+        }],
+        //---callback after processing a dataset to increment the counter and call the async.ForEach callback
+        function(err) {
+            datasetCounter++;
+            logger.info('Finished dataset %s of %s', datasetCounter, numDataSets, {dataset:dataset});
+            running --;
+            checkRunning();
+            memLogger.info(util.inspect(process.memoryUsage().rss));
+            if (err) logger.warn(err.message,err.json);
+            return callback();   
+        }
+    );
+}
+
+
 //FUNCTION: writeActivitiesToDb
 //DESCRIPTION: runs in the async.sequence stack for each activity 
 //accepts data for one activity plus an async module callback,
@@ -205,14 +214,18 @@ function writeActivitiesToDb(dataset, metadata, activityData, mapping, callback)
         //write activity data to db
         function(callback) {
             //parse each activity to db asynchronously
-            async.forEach(activityData['iati-activities']['iati-activity'],function(activity, callback) {
-                return mapObjectToMongoose({sourceObject:activity, nodeMapping:mapping.activity,mongooseModel:Activity},callback);
-            },
+            //async.forEach(activityData['iati-activities']['iati-activity'],function(activity, callback) {
+            for (activity in activityData['iati-activities']['iati-activity']) {
+                var Activity = mongoose.model('Activity',schema.activity)
+                return mapObjectToMongoose({sourceObject:activity, nodeMapping:mapping.activity,mongooseModel:Activity}); //,callback);
+            //},
+            }
+            return callback()
             //call back at the end of parsing all activities
-            function(err) {
-                if (err) return callback({message:'Error writing activity to db.',json:{err:err,dataset:dataset}});
-                return callback();
-            });
+            //function(err) {
+            //    if (err) return callback({message:'Error writing activity to db.',json:{err:err,dataset:dataset}});
+            //    return callback();
+            //});
         }],
         //call callback for parent stack
         function(err) {
@@ -222,80 +235,6 @@ function writeActivitiesToDb(dataset, metadata, activityData, mapping, callback)
   );
 }
         
-        
-    //var datasetList
-/*
-    //get a list of all datasets
-    Request('http://www.iatiregistry.org/api/rest/dataset', function (err, res, body) {
-        
-        if (err) {
-            logger.error('Could not download dataset', {error:err,link:'http://www.iatiregistry.org/api/rest/dataset'}); 
-            return db.close();
-        }
-        else {
-            
-            var datasetList = JSON.parse(body);
-            
-            async.forEach(datasetList, 
-            function(dataset,callback) {
-                var apiLink = 'http://www.iatiregistry.org/api/rest/dataset/' + dataset;
-                logger.info(apiLink);
-                //get metadata
-                Request(apiLink,handleApiResponse(dataset));
-                return callback();
-            },
-            function(err) {
-                if (err) logger.error('ASYNC ABORTED',{error:err})  
-                logger.info('END OF ASYNC');
-                return db.close();
-            });
-                
-                
-                
-                
-            //go through and get each dataset from API
-            /*for (x in datasetList) {
-                
-                
-                
-                //open data set
-                Request(apiLink, function (err, res, body) {
-                    if (err) {
-                        return logger.error('Could not get CKAN document data.',{error:err,link:apiLink});
-                    }
-                    else {
-                        
-                        //get actual XML from link in API response (docment metadata)
-                        var xmlLink = JSON.parse(body).download_url;
-                        
-                        //request XML document
-                        Request(xmlLink, function(err, res, body) {
-                            if (err) {
-                                return logger.error('Could not download XML', {link:xmlLink, error:err});
-                            }
-                            else {
-                                
-                                //parse XML
-                                parseString(body,parseActivityXmlToMongoose); 
-                            }
-                        }); //request XML document
-                            }
-                }); //request document metadata
-            }
-        }
-    }); //request list of documents
-//}); //open database*/
-
-function requestDatasetMetadata(err,res,body) {
-    
-}
-
-//function getDatasetList() {
-    
-
-
-
-
 
 //takes settings {sourceObject,mongooseModel,mapping [{obj1:[],obj2:[]}],
 function mapObjectToMongoose(settings,callback) {
@@ -318,9 +257,10 @@ function mapObjectToMongoose(settings,callback) {
             });
         }
         mongooseObject.activityRef = settings.activityRef;
-        mongooseObject.save(function(err) {
+        return mongooseObject.save(function(err) {
             if (err) logger.warn('Unable to save model.', {error:err});
-            return callback();
+            return;
+            //return callback();
         });
     }
 }
@@ -383,67 +323,23 @@ function getNodeValue(settings) {
 
 
 
+function checkRunning() {
+    //console.log(queue);
 
-
-
-
-
-function parseActivityXmlToMongoose(err,result,xmlLink) {
-    if (err) {
-        return logger.error('Could not parse XML',{link:xmlLink,error:err});
+    while (running <= 5 && queue.length) {
+        console.log('In loop');
+        var run = queue.shift();
+        processDataset(run.dataset, run.mapping, run.callback);
+        running++;
+        console.log(running);
+        console.log(queue.length);  
     }
-    else {
-        
-        //parse activities from XML
-        if(!result['iati-activities'] || !result['iati-activities']['iati-activity']) {
-            logger.error('No activities found.',{link:xmlLink});
-        }
-        else {
-            var activities = result['iati-activities']['iati-activity'];
-            logger.info('XML parsed successfully.',{link:xmlLink});
-            //iterate through all activities in file
-            for (a in activities) {
-                
-                var activity = activities[a];
-                var activityRef = getNodeValue({obj:activity,nodeMapping:['iati-identifier',0,'text']});
-                
-                //TRANSACTION to MongoDB
-                var eliminateCommasFromValue = function(nodeMapping,value) {
-                    if (nodeMapping.join(',') == ['value',0,'text'].join(',')) {
-                        value = Number(String(value).replace(/,/g,''));
-                    }
-                    return value;
-                }
-                if (activity.transaction) {
-                    for (t in activity.transaction) {
-                        mapObjectToMongoose({sourceObject:activity.transaction[t],mongooseModel:Transaction,nodeMapping:transactionMapping.slice(),activityRef:activityRef,preprocess:eliminateCommasFromValue});
-                    }
-                    
-                }
-                
-                //BUDGET to MongoDB
-                if (activity.budget) {
-                    for (b in activity.budget) {                    
-                        mapObjectToMongoose({sourceObject:activity.budget[b],mongooseModel:Budget,nodeMapping:budgetMapping.slice(),activityRef:activityRef});
-                    }
-                }
-                
-                //LOCATION to MongoDB
-                if (activity.location) {
-                    for (l in activity.location) {
-                        mapObjectToMongoose({sourceObject:activity.location[l],mongooseModel:Location,nodeMapping:locationMapping.slice(),activityRef:activityRef});
-                    }
-                }
-                
-                //CONDITION to MongoDB
-                if (activity.condition) {
-                    for (c in activity.condition) {
-                        mapObjectToMongoose({sourceObject:activity.condition[c],mongooseModel:Condition,nodeMapping:conditionMapping.slice(),activityRef:activityRef});
-                    }
-                }
-                return;
-            }
-        }
-    }
+    return;
 }
+        
+
+
+
+
+
 
