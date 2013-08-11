@@ -197,15 +197,20 @@ function writeActivitiesToDb(dataset, metadata, activityData, mapping, callback)
         //write activity data to db
         function(callback) {
             //parse each activity to db asynchronously
-
-            async.forEach(activityData['iati-activities']['iati-activity'],function(activity, callback) {
+            var activityIterator = function(activity,callback) {
                 return mapObjectToMongoose({sourceObject:activity, nodeMapping:mapping.activity,mongooseModel:Activity},callback);
-            },
+            }
+            async.eachSeries(activityData['iati-activities']['iati-activity'],activityIterator,
+                function(err) {
+                    if (err) return callback({message:'Error writing activity to db.',json:{err:err,dataset:dataset}});
+                    return callback();
+                }
+            );
+                             //async.forEach(activityData['iati-activities']['iati-activity'],function(activity, callback) {
+            //    return mapObjectToMongoose({sourceObject:activity, nodeMapping:mapping.activity,mongooseModel:Activity},callback);
+            //},
             //call back at the end of parsing all activities
-            function(err) {
-                if (err) return callback({message:'Error writing activity to db.',json:{err:err,dataset:dataset}});
-                return callback();
-            });
+
         }],
         //call callback for parent stack
         function(err) {
@@ -321,63 +326,4 @@ function getNodeValue(settings) {
 
 
 
-
-function parseActivityXmlToMongoose(err,result,xmlLink) {
-    if (err) {
-        return logger.error('Could not parse XML',{link:xmlLink,error:err});
-    }
-    else {
-        
-        //parse activities from XML
-        if(!result['iati-activities'] || !result['iati-activities']['iati-activity']) {
-            logger.error('No activities found.',{link:xmlLink});
-        }
-        else {
-            var activities = result['iati-activities']['iati-activity'];
-            logger.info('XML parsed successfully.',{link:xmlLink});
-            //iterate through all activities in file
-            for (a in activities) {
-                
-                var activity = activities[a];
-                var activityRef = getNodeValue({obj:activity,nodeMapping:['iati-identifier',0,'text']});
-                
-                //TRANSACTION to MongoDB
-                var eliminateCommasFromValue = function(nodeMapping,value) {
-                    if (nodeMapping.join(',') == ['value',0,'text'].join(',')) {
-                        value = Number(String(value).replace(/,/g,''));
-                    }
-                    return value;
-                }
-                if (activity.transaction) {
-                    for (t in activity.transaction) {
-                        mapObjectToMongoose({sourceObject:activity.transaction[t],mongooseModel:Transaction,nodeMapping:transactionMapping.slice(),activityRef:activityRef,preprocess:eliminateCommasFromValue});
-                    }
-                    
-                }
-                
-                //BUDGET to MongoDB
-                if (activity.budget) {
-                    for (b in activity.budget) {                    
-                        mapObjectToMongoose({sourceObject:activity.budget[b],mongooseModel:Budget,nodeMapping:budgetMapping.slice(),activityRef:activityRef});
-                    }
-                }
-                
-                //LOCATION to MongoDB
-                if (activity.location) {
-                    for (l in activity.location) {
-                        mapObjectToMongoose({sourceObject:activity.location[l],mongooseModel:Location,nodeMapping:locationMapping.slice(),activityRef:activityRef});
-                    }
-                }
-                
-                //CONDITION to MongoDB
-                if (activity.condition) {
-                    for (c in activity.condition) {
-                        mapObjectToMongoose({sourceObject:activity.condition[c],mongooseModel:Condition,nodeMapping:conditionMapping.slice(),activityRef:activityRef});
-                    }
-                }
-                return;
-            }
-        }
-    }
-}
 
