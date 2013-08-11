@@ -102,61 +102,64 @@ db.once('open',function() {
         function(callback) {
             var numDataSets = datasetList.length;
             var datasetCounter = 0;
-            async.forEach(datasetList, 
-                function(dataset,callback) {
-                    var metadata;
-                    var activityData;
-                    //======
-                    async.series([
-                        
-                        //---download activity metadata from API---
-                        function(callback) {
-                            Request('http://www.iatiregistry.org/api/rest/dataset/' + dataset, function(err,res,body) {
-                                if (err) return callback({message:'Error downloading metadata.', json:{dataset:dataset,error:err}});
-                                //parse metadata
-                                metadata = JSON.parse(body);
-                                //check if has download url for XML
-                                if (!metadata.download_url) return callback({message:'Metadata has no download url.', json:{dataset:dataset,error:'No_Download_Url'}});
-                                //move to next function in async.series
-                                return callback();
-                            })
-                        },
-                        
-                        //---download activity XML---
-                        function(callback) {
-                            Request(metadata.download_url, function(err,res,body) {
-                                if (err) return callback({message:'Error downloading XML.', json:{dataset:dataset,error:err}});
-                                activityData = body;
-                                return callback();
-                            })
-                        },
-                        //---parse activity XML to JSON---
-                        function(callback) {
-                            parseString(activityData, function(err, data) {
-                                if (err) return callback({message:'Error parsing XML.', json:{dataset:dataset,error:err}});
-                                activityData = data;
-                                return callback()
-                            });
-                        },
-                        //---put activity JSON into DB---
-                        function(callback) {
-                            //check if empty
-                            if(!activityData['iati-activities'] || !activityData['iati-activities']['iati-activity']) {
-                                return callback({message:'No activities found.', json:{dataset:dataset,error:'NoActivities'}});
-                            }
-                            //write json to db
-                            writeActivitiesToDb(dataset, metadata, activityData, mapping, callback);
-                        }],
-                        //---callback after processing a dataset to increment the counter and call the async.ForEach callback
-                        function(err) {
-                            datasetCounter++;
-                            logger.info('Finished dataset %s of %s', datasetCounter, numDataSets, {dataset:dataset});
-                            memLogger.info(util.inspect(process.memoryUsage().rss));
-                            if (err) logger.warn(err.message,err.json);
-                            return callback();   
+            
+            datasetIterator = function(dataset,callback) {
+                var metadata;
+                var activityData;
+                //======
+                async.series([
+                    
+                    //---download activity metadata from API---
+                    function(callback) {
+                        Request('http://www.iatiregistry.org/api/rest/dataset/' + dataset, function(err,res,body) {
+                            if (err) return callback({message:'Error downloading metadata.', json:{dataset:dataset,error:err}});
+                            //parse metadata
+                            metadata = JSON.parse(body);
+                            //check if has download url for XML
+                            if (!metadata.download_url) return callback({message:'Metadata has no download url.', json:{dataset:dataset,error:'No_Download_Url'}});
+                            //move to next function in async.series
+                            return callback();
+                        })
+                    },
+                    
+                    //---download activity XML---
+                    function(callback) {
+                        Request(metadata.download_url, function(err,res,body) {
+                            if (err) return callback({message:'Error downloading XML.', json:{dataset:dataset,error:err}});
+                            activityData = body;
+                            return callback();
+                        })
+                    },
+                    //---parse activity XML to JSON---
+                    function(callback) {
+                        parseString(activityData, function(err, data) {
+                            if (err) return callback({message:'Error parsing XML.', json:{dataset:dataset,error:err}});
+                            activityData = data;
+                            return callback()
+                        });
+                    },
+                    //---put activity JSON into DB---
+                    function(callback) {
+                        //check if empty
+                        if(!activityData['iati-activities'] || !activityData['iati-activities']['iati-activity']) {
+                            return callback({message:'No activities found.', json:{dataset:dataset,error:'NoActivities'}});
                         }
-                    );
-                },
+                        //write json to db
+                        writeActivitiesToDb(dataset, metadata, activityData, mapping, callback);
+                    }],
+                    //---callback after processing a dataset to increment the counter and call the async.ForEach callback
+                    function(err) {
+                        datasetCounter++;
+                        logger.info('Finished dataset %s of %s', datasetCounter, numDataSets, {dataset:dataset});
+                        memLogger.info(util.inspect(process.memoryUsage().rss));
+                        if (err) logger.warn(err.message,err.json);
+                        return callback();   
+                    }
+                );
+            }
+            
+            
+            async.eachLimit(datasetList,5,datasetIterator,              
                 //===final callback after processing all datasets===
                 function(err) {
                     if (err) return callback({message:'Processing datasets aborted.',json:{error:err}});
@@ -194,22 +197,15 @@ function writeActivitiesToDb(dataset, metadata, activityData, mapping, callback)
         //write activity data to db
         function(callback) {
             //parse each activity to db asynchronously
-            var activityIterator = function(activity,callback) {
+
+            async.forEach(activityData['iati-activities']['iati-activity'],function(activity, callback) {
                 return mapObjectToMongoose({sourceObject:activity, nodeMapping:mapping.activity,mongooseModel:Activity},callback);
-            }
-            
-            async.eachLimit(activityData['iati-activities']['iati-activity'],5,activityIterator,
-                function(err) {
-                    if (err) return callback({message:'Error writing activity to db.',json:{err:err,dataset:dataset}});
-                    return callback();
-            });
-            
-                            
-            //async.forEach(activityData['iati-activities']['iati-activity'],function(activity, callback) {
-            //    return mapObjectToMongoose({sourceObject:activity, nodeMapping:mapping.activity,mongooseModel:Activity},callback);
-            //},
+            },
             //call back at the end of parsing all activities
-            
+            function(err) {
+                if (err) return callback({message:'Error writing activity to db.',json:{err:err,dataset:dataset}});
+                return callback();
+            });
         }],
         //call callback for parent stack
         function(err) {
