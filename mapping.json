@@ -1,6 +1,11 @@
 {
     "activity": [
-        {"sourceNode":["iati-identifier",0,"text"], "destNode":["iatiIdentifier"]}
+        {"sourceNode":["iati-identifier",0,"text"], "destNode":["iatiIdentifier"]},
+        {"sourceNode":["transaction"], "destNode":["transaction"]},
+				{"sourceNode":["planned-disbursement"], "destNode":["plannedDisbursement"]},
+				{"sourceNode":["participating-org"], "destNode":["participatingOrg"]},
+				{"sourceNode":["budget"], "destNode":["budget"]},
+				{"sourceNode":["location"], "destNode":["location"]},
+				{"sourceNode":["result"], "destNode":["result"]}
 		]
 }
-
