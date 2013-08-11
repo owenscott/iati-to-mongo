@@ -194,15 +194,22 @@ function writeActivitiesToDb(dataset, metadata, activityData, mapping, callback)
         //write activity data to db
         function(callback) {
             //parse each activity to db asynchronously
-
-            async.forEach(activityData['iati-activities']['iati-activity'],function(activity, callback) {
+            var activityIterator = function(activity,callback) {
                 return mapObjectToMongoose({sourceObject:activity, nodeMapping:mapping.activity,mongooseModel:Activity},callback);
-            },
-            //call back at the end of parsing all activities
-            function(err) {
-                if (err) return callback({message:'Error writing activity to db.',json:{err:err,dataset:dataset}});
-                return callback();
+            }
+            
+            async.eachLimit(activityData['iati-activities']['iati-activity'],5,activityIterator,
+                function(err) {
+                    if (err) return callback({message:'Error writing activity to db.',json:{err:err,dataset:dataset}});
+                    return callback();
             });
+            
+                            
+            //async.forEach(activityData['iati-activities']['iati-activity'],function(activity, callback) {
+            //    return mapObjectToMongoose({sourceObject:activity, nodeMapping:mapping.activity,mongooseModel:Activity},callback);
+            //},
+            //call back at the end of parsing all activities
+            
         }],
         //call callback for parent stack
         function(err) {
@@ -211,6 +218,22 @@ function writeActivitiesToDb(dataset, metadata, activityData, mapping, callback)
         }
   );
 }
+/*
+eachLimit(arr, limit, iterator, callback)
+
+The same as each only no more than "limit" iterators will be simultaneously running at any time.
+
+Note that the items are not processed in batches, so there is no guarantee that the first "limit" iterator functions will complete before any others are started.
+
+Arguments
+
+arr - An array to iterate over.
+limit - The maximum number of iterators to run at any time.
+iterator(item, callback) - A function to apply to each item in the array. The iterator is passed a callback(err) which must be called once it has completed. If no error has occured, the callback should be run without arguments or with an explicit null argument.
+callback(err) - A callback which is called after all the iterator functions have finished, or an error has occurred.
+
+
+*/
         
 //takes settings {sourceObject,mongooseModel,mapping [{obj1:[],obj2:[]}],
 function mapObjectToMongoose(settings,callback) {
