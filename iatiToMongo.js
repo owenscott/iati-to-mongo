@@ -5,7 +5,7 @@
 //Contact: owen.m.scott(at)gmail.com
 
 
-//CONFIG
+//========CONFIG========//
 
 var dbName = 'iatiToMongo';
 var logFile = 'logfile.log';
@@ -45,7 +45,7 @@ var memLogger = new (winston.Logger)({
     ]
 });
 
-//GET SCHEMA
+//========SCHEMA========//
 
 /*
     - create an array with all of the schemas
@@ -59,24 +59,12 @@ var memLogger = new (winston.Logger)({
 //}
 
 require('./schema.js');
-
-
-
-
-
-
-//Mongoose Models
-
 var schema = makeSchema(mongoose);
 var Activity = mongoose.model('Activity',schema.activity)
 
-//CODE
 
-//mongoose models (try putting these in the function scope)
-//var Transaction = mongoose.model('Transaction', transactionSchema);
-//var Budget = mongoose.model('Budget', budgetSchema);
-//var Location = mongoose.model('Location', locationSchema);
-//var Condition = mongoose.model('Condition', conditionSchema);
+//========CODE========//
+
 
 //connect to Mongo
 mongoose.connect('mongodb://localhost/'+dbName);
@@ -196,6 +184,7 @@ db.once('open',function() {
 //writes activity to db, executes callback on completion or error
 
 function writeActivitiesToDb(dataset, metadata, activityData, mapping, callback) {
+
     async.parallel([
         //write metadata to db
         function(callback) {
@@ -205,6 +194,7 @@ function writeActivitiesToDb(dataset, metadata, activityData, mapping, callback)
         //write activity data to db
         function(callback) {
             //parse each activity to db asynchronously
+
             async.forEach(activityData['iati-activities']['iati-activity'],function(activity, callback) {
                 return mapObjectToMongoose({sourceObject:activity, nodeMapping:mapping.activity,mongooseModel:Activity},callback);
             },
@@ -222,81 +212,6 @@ function writeActivitiesToDb(dataset, metadata, activityData, mapping, callback)
   );
 }
         
-        
-    //var datasetList
-/*
-    //get a list of all datasets
-    Request('http://www.iatiregistry.org/api/rest/dataset', function (err, res, body) {
-        
-        if (err) {
-            logger.error('Could not download dataset', {error:err,link:'http://www.iatiregistry.org/api/rest/dataset'}); 
-            return db.close();
-        }
-        else {
-            
-            var datasetList = JSON.parse(body);
-            
-            async.forEach(datasetList, 
-            function(dataset,callback) {
-                var apiLink = 'http://www.iatiregistry.org/api/rest/dataset/' + dataset;
-                logger.info(apiLink);
-                //get metadata
-                Request(apiLink,handleApiResponse(dataset));
-                return callback();
-            },
-            function(err) {
-                if (err) logger.error('ASYNC ABORTED',{error:err})  
-                logger.info('END OF ASYNC');
-                return db.close();
-            });
-                
-                
-                
-                
-            //go through and get each dataset from API
-            /*for (x in datasetList) {
-                
-                
-                
-                //open data set
-                Request(apiLink, function (err, res, body) {
-                    if (err) {
-                        return logger.error('Could not get CKAN document data.',{error:err,link:apiLink});
-                    }
-                    else {
-                        
-                        //get actual XML from link in API response (docment metadata)
-                        var xmlLink = JSON.parse(body).download_url;
-                        
-                        //request XML document
-                        Request(xmlLink, function(err, res, body) {
-                            if (err) {
-                                return logger.error('Could not download XML', {link:xmlLink, error:err});
-                            }
-                            else {
-                                
-                                //parse XML
-                                parseString(body,parseActivityXmlToMongoose); 
-                            }
-                        }); //request XML document
-                            }
-                }); //request document metadata
-            }
-        }
-    }); //request list of documents
-//}); //open database*/
-
-function requestDatasetMetadata(err,res,body) {
-    
-}
-
-//function getDatasetList() {
-    
-
-
-
-
-
 //takes settings {sourceObject,mongooseModel,mapping [{obj1:[],obj2:[]}],
 function mapObjectToMongoose(settings,callback) {
     var mapping = settings.nodeMapping.slice();
