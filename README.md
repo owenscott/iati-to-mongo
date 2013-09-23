@@ -22,5 +22,5 @@ A simple program for downloading all of the activity files included in the IATI 
 		
 ##Current Status
 
-(2013-08-05) This repo is still very much under development. At the moment all it will do is download the IATI XML and parse the unique identifier for each IATI Activity into MongoDB. Support for all IATI fields will be added over the next week.  
+(2013-09-23) Currently downloads all projects are raw XML parsed to JSON, without further transformation or validation.
 	

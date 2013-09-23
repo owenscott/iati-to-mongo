@@ -2,9 +2,13 @@
 
 
 makeSchema = function(mongoose) {
-
+    var activity = new mongoose.Schema({
+            activity: Object
+    });
+    return activity;
+}
     
-    
+/*    
     
     //geoname
     var geoname = new mongoose.Schema({
