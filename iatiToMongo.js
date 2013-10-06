@@ -7,7 +7,7 @@
 
 //========CONFIG========//
 
-var dbName = 'iatiToMongo';
+var dbName = 'iatiToMongoDev';
 var logFile = 'logfile.log';
 
 //LIB
@@ -15,6 +15,7 @@ var logFile = 'logfile.log';
 var fs = require('fs')
 var mongoose = require('mongoose');
 var Request = require('request');
+var splitXml = require('./splitXml.js');
 var parseString = require('xml2js').Parser({
         attrkey:'@',
         charkey:'text',
@@ -121,7 +122,18 @@ db.once('open',function() {
                             return callback();
                         })
                     },
-                    
+                    function(callback) {
+                        //at this point I have the ckan api response
+                        var xmlSplitter = new splitXml.parser()
+                            .setReadStream(Request(metadata.download_url))
+                            .setSplitTag('iati-activity')
+                            .onElement(processActivity)
+                            .onEnd(callback)
+                            .execute();
+                        
+                    }],
+                    //START Excision
+                    /*
                     //---download activity XML---
                     function(callback) {
                         Request(metadata.download_url, function(err,res,body) {
@@ -147,6 +159,9 @@ db.once('open',function() {
                         //write json to db
                         writeActivitiesToDb(dataset, metadata, activityData, mapping, callback);
                     }],
+                    */
+                    //END Excision
+                             
                     //---callback after processing a dataset to increment the counter and call the async.ForEach callback
                     function(err) {
                         datasetCounter++;
@@ -179,6 +194,29 @@ db.once('open',function() {
     );
 });
     
+
+function processActivity(activity) {
+    var dataset,metadata,mapping;
+    async.series([
+        //convert xml to json
+        function(callback) {
+                parseString(activity, function(err, data) {
+                if (err) return callback({message:'Error parsing XML.', json:{dataset:dataset,error:err}});
+                activity = data;
+                //logger.info('Activity converted to JSON');
+                return callback();
+            });
+        },
+        //put json into db
+        function(callback) {
+            return mapObjectToMongoose({sourceObject:activity, nodeMapping:mapping,mongooseModel:Activity},callback);
+        }],
+        function(err) {
+            if(err) logger.error('New Problem',err)
+        }
+    )
+            
+}
 
 
 //FUNCTION: writeActivitiesToDb
