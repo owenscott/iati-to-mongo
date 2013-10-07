@@ -38,31 +38,18 @@ var logger = new (winston.Logger)({
     ]
 });
 
-var memLogger = new (winston.Logger)({
-    transports:[
-        new (winston.transports.File)({
-            filename: 'memLog.log'
-        })
-    ]
-});
 
 //========SCHEMA========//
 
-/*
-    - create an array with all of the schemas
-    - for each one, require it and then create a model
-*/
+var makeSchema = function(mongoose) {
+    var activity = new mongoose.Schema({
+        activity: Object
+    });
+    return activity;
+}
 
-//var schemas = ['activity'];
-
-//for (s in schemas) {
-//    require('./schema/' + schemas[s] + '.js');
-//}
-
-require('./schema.js');
 var schema = makeSchema(mongoose);
 var Activity = mongoose.model('Activity',new mongoose.Schema({"iati-activity":Object}))
-
 
 //========CODE========//
 
@@ -128,45 +115,18 @@ db.once('open',function() {
                             .setReadStream(Request(metadata.download_url))
                             .setSplitTag('iati-activity')
                             .onElement(processActivity)
+                            .onError(function(err) {
+                                return callback({message:'Error processing dataset.', json:{dataset:dataset,error:err}})
+                            }
                             .onEnd(callback)
                             .execute();
                         
                     }],
-                    //START Excision
-                    /*
-                    //---download activity XML---
-                    function(callback) {
-                        Request(metadata.download_url, function(err,res,body) {
-                            if (err) return callback({message:'Error downloading XML.', json:{dataset:dataset,error:err}});
-                            activityData = body;
-                            return callback();
-                        })
-                    },
-                    //---parse activity XML to JSON---
-                    function(callback) {
-                        parseString(activityData, function(err, data) {
-                            if (err) return callback({message:'Error parsing XML.', json:{dataset:dataset,error:err}});
-                            activityData = data;
-                            return callback()
-                        });
-                    },
-                    //---put activity JSON into DB---
-                    function(callback) {
-                        //check if empty
-                        if(!activityData['iati-activities'] || !activityData['iati-activities']['iati-activity']) {
-                            return callback({message:'No activities found.', json:{dataset:dataset,error:'NoActivities'}});
-                        }
-                        //write json to db
-                        writeActivitiesToDb(dataset, metadata, activityData, mapping, callback);
-                    }],
-                    */
-                    //END Excision
                              
                     //---callback after processing a dataset to increment the counter and call the async.ForEach callback
                     function(err) {
                         datasetCounter++;
                         logger.info('Finished dataset %s of %s', datasetCounter, numDataSets, {dataset:dataset});
-                        memLogger.info(util.inspect(process.memoryUsage().rss));
                         if (err) logger.warn(err.message,err.json);
                         return callback();   
                     }
@@ -212,7 +172,7 @@ function processActivity(activity) {
             return mapObjectToMongoose({sourceObject:activity, nodeMapping:mapping,mongooseModel:Activity},callback);
         }],
         function(err) {
-            if(err) logger.error('New Problem',err)
+            if(err) logger.warn({message:'Unknown error.', json:{dataset:dataset,error:err})
         }
     )
             
