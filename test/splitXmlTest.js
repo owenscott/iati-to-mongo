@@ -2,6 +2,7 @@
 var splitXml = require('./../splitXml.js');
 var assert = require('assert');
 var Stream = require('stream');
+var request = require('request');
 
 var parser,shortXml,longXml, badXml;
 
@@ -58,6 +59,10 @@ describe('splitXml', function() {
     })
     it('should not crash when closing tag missing', function(done) {
         var stream = createTestStream(badXml);
+        parser.setReadStream(stream).setSplitTag('item').onEnd(done).execute();
+    })
+    it('should not crash when it tries to pipe from a non-existent stream', function(done) {
+        var stream = request('http://www.asdfasdgjaskdgjaksjdgkasdgas.com/')
         parser.setReadStream(stream).setSplitTag('item').onEnd(done).execute();
     })
         
