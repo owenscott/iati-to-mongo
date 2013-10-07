@@ -23,4 +23,4 @@ A simple program for downloading all of the activity files included in the IATI 
 ##Current Status
 
 (2013-09-23) Currently downloads all projects are raw XML parsed to JSON, without further transformation or validation.
-	
+(2013-10-07) Switched XMl parsing to use steaming parser (buffering entire files into memory was crashing after USAID uploaded their huge CRS files)
