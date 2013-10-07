@@ -117,7 +117,7 @@ db.once('open',function() {
                             .onElement(processActivity)
                             .onError(function(err) {
                                 return callback({message:'Error processing dataset.', json:{dataset:dataset,error:err}})
-                            }
+                            })
                             .onEnd(callback)
                             .execute();
                         
