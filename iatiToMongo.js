@@ -172,7 +172,7 @@ function processActivity(activity) {
             return mapObjectToMongoose({sourceObject:activity, nodeMapping:mapping,mongooseModel:Activity},callback);
         }],
         function(err) {
-            if(err) logger.warn({message:'Unknown error.', json:{dataset:dataset,error:err})
+            if(err) logger.warn({message:'Unknown error.', json:{dataset:dataset,error:err}})
         }
     )
             
